@@ -1,5 +1,8 @@
-import { getDefaultConfig } from "expo/metro-config";
-import { withNativeWind } from "nativewind/metro-config";
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+
+const { getDefaultConfig } = require("expo/metro-config");
+const { withNativeWind } = require("nativewind/metro-config");
 
 const config = getDefaultConfig(import.meta.dirname);
 
