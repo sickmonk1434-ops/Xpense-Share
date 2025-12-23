@@ -194,7 +194,7 @@ export const groupService = {
     /**
      * Get group details including members
      */
-    async getGroupDetails(groupId: string): Promise<{ group: Group; members: Profile[] }> {
+    async getGroupDetails(groupId: string): Promise<{ group: Group; members: Profile[]; invitations: any[] }> {
         const groupResult = await db.execute({
             sql: 'SELECT * FROM groups WHERE id = ?',
             args: [groupId],
@@ -210,9 +210,20 @@ export const groupService = {
             args: [groupId],
         });
 
+        const invitationsResult = await db.execute({
+            sql: `
+        SELECT i.*, p.full_name as invitee_name, p.email as invitee_email
+        FROM invitations i
+        JOIN profiles p ON p.id = i.invitee_id
+        WHERE i.group_id = ? AND i.status = 'pending'
+      `,
+            args: [groupId],
+        });
+
         return {
             group: groupResult.rows[0] as unknown as Group,
             members: membersResult.rows as unknown as Profile[],
+            invitations: invitationsResult.rows as unknown as any[],
         };
     }
 };

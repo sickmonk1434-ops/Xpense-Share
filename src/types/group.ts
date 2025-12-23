@@ -21,3 +21,14 @@ export interface GroupMember {
     joined_at: string;
     profile?: Profile;
 }
+
+export interface Invitation {
+    id: string;
+    group_id: string;
+    inviter_id: string;
+    invitee_id: string;
+    status: 'pending' | 'accepted' | 'rejected';
+    created_at: string;
+    invitee_email?: string; // For display if joined result
+    invitee_name?: string;
+}

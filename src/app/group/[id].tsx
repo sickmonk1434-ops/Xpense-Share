@@ -14,6 +14,7 @@ export default function GroupDetails() {
     const { id } = useLocalSearchParams<{ id: string }>();
     const { user } = useUser();
     const [data, setData] = useState<{ group: Group; members: Profile[] } | null>(null);
+    const [invitations, setInvitations] = useState<any[]>([]);
     const [expenses, setExpenses] = useState<any[]>([]);
     const [settlements, setSettlements] = useState<any[]>([]);
     const [balance, setBalance] = useState({ owed: 0, owes: 0 });
@@ -28,7 +29,8 @@ export default function GroupDetails() {
                 expenseService.getUserBalance(user.id, id),
                 settlementService.getGroupSettlements(id)
             ]);
-            setData(details);
+            setData({ group: details.group, members: details.members });
+            setInvitations(details.invitations);
             setExpenses(groupExpenses);
             setBalance(userBalance);
             setSettlements(groupSettlements);
@@ -309,6 +311,28 @@ export default function GroupDetails() {
                                 </View>
                             </View>
                         ))}
+                    </View>
+                )}
+
+                {invitations.length > 0 && (
+                    <View className="mb-6">
+                        <Text className="text-lg font-bold text-slate-900 mb-2">Pending Invites</Text>
+                        <View className="bg-slate-50 rounded-2xl p-4">
+                            {invitations.map((invite) => (
+                                <View key={invite.id} className="flex-row justify-between items-center py-2 border-b border-slate-200 last:border-0">
+                                    <View className="flex-row items-center">
+                                        <View className="w-8 h-8 bg-amber-100 rounded-full items-center justify-center mr-3">
+                                            <Clock size={14} color="#d97706" />
+                                        </View>
+                                        <View>
+                                            <Text className="font-medium text-slate-900">{invite.invitee_name || 'Unknown'}</Text>
+                                            <Text className="text-[10px] text-slate-500">{invite.invitee_email || 'No email'}</Text>
+                                        </View>
+                                    </View>
+                                    <Text className="text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded-full font-bold">Pending</Text>
+                                </View>
+                            ))}
+                        </View>
                     </View>
                 )}
 
