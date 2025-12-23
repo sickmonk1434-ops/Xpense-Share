@@ -3,6 +3,27 @@ export const emailService = {
      * Send an invite email to a user who is not yet registered
      */
     async sendInvite(toEmail: string, groupName: string, inviterName: string): Promise<void> {
+        if (Platform.OS === 'web') {
+            try {
+                const response = await fetch('/api/invite', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ toEmail, groupName, inviterName }),
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || "Failed to send email via proxy");
+                }
+                console.log(`Invite sent successfully to ${toEmail} (via proxy)`);
+                return;
+            } catch (error: any) {
+                console.error('Failed to send invite email (proxy):', error);
+                throw error;
+            }
+        }
+
+        // Mobile / Native implementation
         const API_KEY = process.env.EXPO_PUBLIC_MAILEROO_API_KEY || "a1012e1c15579405f877746657c4886080b55b6c642ac6ef826167b2a6b0b213";
         const FROM_EMAIL = process.env.EXPO_PUBLIC_MAILEROO_FROM_EMAIL || "no-reply@xpense-share.com";
 
