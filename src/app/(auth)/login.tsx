@@ -60,7 +60,7 @@ export default function Login() {
             <View className="mb-10 items-center">
                 <RNImage
                     source={require('../../../assets/logo.jpg')}
-                    className="w-10 h-10 mb-6"
+                    className="w-4 h-4 mb-6"
                     resizeMode="contain"
                 />
                 <Text className="text-3xl font-bold text-slate-900 mb-2">Welcome Back</Text>
