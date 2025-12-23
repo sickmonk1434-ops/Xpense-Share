@@ -1,4 +1,5 @@
 import { db } from '../utils/db';
+import { notificationService } from './notification';
 
 export interface Expense {
     id: string;
@@ -31,7 +32,6 @@ export const expenseService = {
     ): Promise<void> {
         if (splits.length === 0) throw new Error("At least one person must be involved in the expense.");
 
-        // Validate that the total of splits equals the expense amount (handling floating point precision)
         const totalSplit = splits.reduce((sum, s) => sum + s.amountOwed, 0);
         if (Math.abs(totalSplit - amount) > 0.01) {
             throw new Error(`The split amounts ($${totalSplit.toFixed(2)}) do not match the total expense ($${amount.toFixed(2)}).`);
@@ -54,6 +54,39 @@ export const expenseService = {
         }
 
         await db.batch(statements, "write");
+
+        // 4. Create notifications for all members (except the creator)
+        try {
+            const groupMembersResult = await db.execute({
+                sql: 'SELECT user_id FROM group_members WHERE group_id = ? AND user_id != ?',
+                args: [groupId, creatorId],
+            });
+
+            const members = groupMembersResult.rows;
+            const groupNameResult = await db.execute({
+                sql: 'SELECT name FROM groups WHERE id = ?',
+                args: [groupId],
+            });
+            const groupName = (groupNameResult.rows[0]?.name as string) || "the group";
+
+            const creatorProfileResult = await db.execute({
+                sql: 'SELECT full_name FROM profiles WHERE id = ?',
+                args: [creatorId],
+            });
+            const creatorName = (creatorProfileResult.rows[0]?.full_name as string) || "Someone";
+
+            for (const member of members) {
+                await notificationService.createNotification(
+                    member.user_id as string,
+                    'expense',
+                    expenseId,
+                    `${creatorName} added a new expense "${description}" in "${groupName}".`
+                );
+            }
+        } catch (error) {
+            console.error('Failed to create expense notifications:', error);
+            // Non-blocking
+        }
     },
 
     /**
@@ -75,10 +108,8 @@ export const expenseService = {
 
     /**
      * Get net balance for a user across all groups or a specific group.
-     * Subtracts accepted settlements from the totals.
      */
     async getUserBalance(userId: string, groupId?: string): Promise<{ owed: number; owes: number }> {
-        // 1. Amount user is owed from expenses
         const owedSql = groupId
             ? `SELECT SUM(s.amount_owed) as total FROM expense_splits s 
          JOIN expenses e ON e.id = s.expense_id 
@@ -90,7 +121,6 @@ export const expenseService = {
         const owedArgs = groupId ? [userId, userId, groupId] : [userId, userId];
         const owedResult = await db.execute({ sql: owedSql, args: owedArgs });
 
-        // 2. Amount user owes to others from expenses
         const owesSql = groupId
             ? `SELECT SUM(s.amount_owed) as total FROM expense_splits s
          JOIN expenses e ON e.id = s.expense_id
@@ -102,7 +132,6 @@ export const expenseService = {
         const owesArgs = groupId ? [userId, userId, groupId] : [userId, userId];
         const owesResult = await db.execute({ sql: owesSql, args: owesArgs });
 
-        // 3. Amount user has ALREADY PAID (Accepted settlements where user is sender)
         const sentSql = groupId
             ? `SELECT SUM(amount) as total FROM settlements WHERE sender_id = ? AND group_id = ? AND status = 'accepted'`
             : `SELECT SUM(amount) as total FROM settlements WHERE sender_id = ? AND status = 'accepted'`;
@@ -110,7 +139,6 @@ export const expenseService = {
         const sentArgs = groupId ? [userId, groupId] : [userId];
         const sentResult = await db.execute({ sql: sentSql, args: sentArgs });
 
-        // 4. Amount user has ALREADY RECEIVED (Accepted settlements where user is receiver)
         const receivedSql = groupId
             ? `SELECT SUM(amount) as total FROM settlements WHERE receiver_id = ? AND group_id = ? AND status = 'accepted'`
             : `SELECT SUM(amount) as total FROM settlements WHERE receiver_id = ? AND status = 'accepted'`;
@@ -127,5 +155,90 @@ export const expenseService = {
             owed: Math.max(0, rawOwed - received),
             owes: Math.max(0, rawOwes - sent),
         };
+    },
+
+    /**
+     * Update an existing expense (Permission: Expense creator or Group creator)
+     */
+    async updateExpense(
+        expenseId: string,
+        userId: string,
+        description: string,
+        amount: number,
+        payerId: string,
+        splits: { userId: string; amountOwed: number }[]
+    ): Promise<void> {
+        // 1. Check permissions
+        const expenseResult = await db.execute({
+            sql: `
+        SELECT e.created_by, g.created_by as group_creator 
+        FROM expenses e 
+        JOIN groups g ON g.id = e.group_id 
+        WHERE e.id = ?
+      `,
+            args: [expenseId],
+        });
+
+        const expense = expenseResult.rows[0];
+        if (!expense) throw new Error("Expense not found.");
+
+        if (expense.created_by !== userId && (expense.group_creator as string) !== userId) {
+            throw new Error("You do not have permission to edit this expense.");
+        }
+
+        // 2. Validate splits
+        if (splits.length === 0) throw new Error("At least one person must be involved in the expense.");
+        const totalSplit = splits.reduce((sum, s) => sum + s.amountOwed, 0);
+        if (Math.abs(totalSplit - amount) > 0.01) {
+            throw new Error(`The split amounts ($${totalSplit.toFixed(2)}) do not match the total expense ($${amount.toFixed(2)}).`);
+        }
+
+        // 3. Update expense and splits in a transaction
+        const statements = [
+            {
+                sql: 'UPDATE expenses SET description = ?, amount = ?, payer_id = ? WHERE id = ?',
+                args: [description, amount, payerId, expenseId],
+            },
+            {
+                sql: 'DELETE FROM expense_splits WHERE expense_id = ?',
+                args: [expenseId],
+            }
+        ];
+
+        for (const split of splits) {
+            statements.push({
+                sql: 'INSERT INTO expense_splits (expense_id, user_id, amount_owed) VALUES (?, ?, ?)',
+                args: [expenseId, split.userId, split.amountOwed],
+            });
+        }
+
+        await db.batch(statements, "write");
+    },
+
+    /**
+     * Delete an expense (Permission: Expense creator or Group creator)
+     */
+    async deleteExpense(expenseId: string, userId: string): Promise<void> {
+        const expenseResult = await db.execute({
+            sql: `
+        SELECT e.created_by, g.created_by as group_creator 
+        FROM expenses e 
+        JOIN groups g ON g.id = e.group_id 
+        WHERE e.id = ?
+      `,
+            args: [expenseId],
+        });
+
+        const expense = expenseResult.rows[0];
+        if (!expense) throw new Error("Expense not found.");
+
+        if (expense.created_by !== userId && (expense.group_creator as string) !== userId) {
+            throw new Error("You do not have permission to delete this expense.");
+        }
+
+        await db.execute({
+            sql: 'DELETE FROM expenses WHERE id = ?',
+            args: [expenseId],
+        });
     }
 };

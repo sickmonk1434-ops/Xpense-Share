@@ -1,41 +1,42 @@
-import React, { useState } from 'react'
-import { Alert, View, TextInput, Text, Pressable } from 'react-native'
+import React, { useState, useCallback } from 'react'
+import { View, TextInput, Text, Pressable, Platform } from 'react-native'
 import { useSignUp } from '@clerk/clerk-expo'
 import { Button } from '../../components/Button'
 import { Link, router } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { useWarmUpBrowser } from '../../hooks/useWarmUpBrowser'
 
 export default function SignUp() {
+    useWarmUpBrowser();
     const { isLoaded, signUp, setActive } = useSignUp()
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [loading, setLoading] = useState(false)
+    const [error, setError] = useState<string | null>(null)
 
-    async function signUpWithEmail() {
+    const signUpWithEmail = useCallback(async () => {
         if (!isLoaded) return
 
         setLoading(true)
+        setError(null)
         try {
             const result = await signUp.create({
                 emailAddress: email,
                 password,
             })
 
-            // In a real app, you would handle email verification here.
-            // For now, we'll try to set the session if it's already complete.
             if (result.status === 'complete') {
                 await setActive({ session: result.createdSessionId })
                 router.replace('/')
             } else {
-                // Sign up is created but needs verification (email code, etc.)
-                Alert.alert('Success', 'Check your email for verification!')
+                setError('Sign up incomplete. Check your email for verification!')
             }
         } catch (err: any) {
-            Alert.alert("Sign Up Error", err.errors?.[0]?.message || "An error occurred")
+            setError(err.errors?.[0]?.message || "An error occurred during sign up")
         } finally {
             setLoading(false)
         }
-    }
+    }, [isLoaded, email, password, signUp, setActive])
 
     return (
         <SafeAreaView className="flex-1 bg-white justify-center px-6">
@@ -43,6 +44,12 @@ export default function SignUp() {
                 <Text className="text-3xl font-bold text-slate-900 mb-2">Create Account</Text>
                 <Text className="text-slate-500 text-base">Join Xpense Share today.</Text>
             </View>
+
+            {error && (
+                <View className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl">
+                    <Text className="text-red-600 text-sm font-medium">{error}</Text>
+                </View>
+            )}
 
             <View className="gap-4">
                 <View>

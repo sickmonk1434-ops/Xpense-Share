@@ -1,20 +1,26 @@
 import React, { useState, useCallback } from 'react'
-import { Alert, View, TextInput, Text, Pressable } from 'react-native'
-import { useSignIn } from '@clerk/clerk-expo'
+import { View, TextInput, Text, Pressable, Platform } from 'react-native'
+import * as Linking from 'expo-linking'
+import { useSignIn, useOAuth } from '@clerk/clerk-expo'
 import { Button } from '../../components/Button'
 import { Link, router } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { useWarmUpBrowser } from '../../hooks/useWarmUpBrowser'
 
 export default function Login() {
+    useWarmUpBrowser();
     const { signIn, setActive, isLoaded } = useSignIn()
+    const { startOAuthFlow } = useOAuth({ strategy: "oauth_google" });
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [loading, setLoading] = useState(false)
+    const [error, setError] = useState<string | null>(null)
 
     const signInWithEmail = useCallback(async () => {
         if (!isLoaded) return
 
         setLoading(true)
+        setError(null)
         try {
             const result = await signIn.create({
                 identifier: email,
@@ -25,20 +31,29 @@ export default function Login() {
                 await setActive({ session: result.createdSessionId })
                 router.replace('/')
             } else {
-                console.log(JSON.stringify(result, null, 2))
-                Alert.alert("Login Incomplete", "Please complete all verification steps.")
+                setError("Login incomplete. Please check your verification.")
             }
         } catch (err: any) {
-            Alert.alert("Login Error", err.errors?.[0]?.message || "An error occurred")
+            setError(err.errors?.[0]?.message || "An error occurred during sign in")
         } finally {
             setLoading(false)
         }
     }, [isLoaded, email, password, signIn, setActive])
 
-    const signInWithGoogle = async () => {
-        // TODO: improvements on Google Auth
-        Alert.alert("Google Auth", "Requires Google Cloud setup and Deep linking configuration.")
-    }
+    const signInWithGoogle = useCallback(async () => {
+        try {
+            const { createdSessionId, signIn, signUp, setActive } = await startOAuthFlow({
+                redirectUrl: Linking.createURL('/oauth-native-callback', { scheme: 'xpense-share' })
+            });
+            if (createdSessionId) {
+                setActive!({ session: createdSessionId });
+                router.replace("/");
+            }
+        } catch (err: any) {
+            console.error("OAuth error", err);
+            setError(err.errors?.[0]?.message || "Could not sign in with Google");
+        }
+    }, [startOAuthFlow])
 
     return (
         <SafeAreaView className="flex-1 bg-white justify-center px-6">
@@ -46,6 +61,12 @@ export default function Login() {
                 <Text className="text-3xl font-bold text-slate-900 mb-2">Welcome Back</Text>
                 <Text className="text-slate-500 text-base">Sign in to continue splitting expenses.</Text>
             </View>
+
+            {error && (
+                <View className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl">
+                    <Text className="text-red-600 text-sm font-medium">{error}</Text>
+                </View>
+            )}
 
             <View className="gap-4">
                 <View>

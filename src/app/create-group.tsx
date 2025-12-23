@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Alert, ScrollView } from 'react-native';
+import { View, Text, TextInput, Alert, ScrollView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '../components/Button';
 import { groupService } from '../services/group';
@@ -23,10 +23,15 @@ export default function CreateGroup() {
 
         setLoading(true);
         try {
-            await groupService.createGroup(user.id, name, iconUrl);
-            Alert.alert("Success", "Group created successfully!", [
-                { text: "OK", onPress: () => router.replace('/') }
-            ]);
+            const newGroup = await groupService.createGroup(user.id, name, iconUrl);
+            if (Platform.OS === 'web') {
+                window.alert("Group created successfully!");
+                router.replace({ pathname: '/group/[id]', params: { id: newGroup.id } });
+            } else {
+                Alert.alert("Success", "Group created successfully!", [
+                    { text: "OK", onPress: () => router.replace({ pathname: '/group/[id]', params: { id: newGroup.id } }) }
+                ]);
+            }
         } catch (err: any) {
             Alert.alert("Error", err.message || "Could not create group.");
         } finally {

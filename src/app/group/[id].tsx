@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, ActivityIndicator, Alert, Pressable } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, Alert, Pressable, Platform } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { groupService } from '../../services/group';
@@ -8,7 +8,7 @@ import { settlementService } from '../../services/settlement';
 import { Group, Profile } from '../../types/group';
 import { useUser } from '@clerk/clerk-expo';
 import { Button } from '../../components/Button';
-import { Trash2, UserMinus, UserPlus, ArrowLeft, Plus, Check, X, Clock } from 'lucide-react-native';
+import { Trash2, UserMinus, UserPlus, ArrowLeft, Plus, Check, X, Clock, Edit2, Settings } from 'lucide-react-native';
 
 export default function GroupDetails() {
     const { id } = useLocalSearchParams<{ id: string }>();
@@ -53,6 +53,45 @@ export default function GroupDetails() {
         }
     };
 
+    const handleRenameGroup = async () => {
+        if (!id || !user || !data) return;
+
+        if (Platform.OS === 'web') {
+            const name = window.prompt("Rename Group", data.group.name);
+            if (name) {
+                try {
+                    await groupService.updateGroup(id, user.id, name);
+                    fetchDetails();
+                } catch (err: any) {
+                    Alert.alert("Error", err.message);
+                }
+            }
+            return;
+        }
+
+        Alert.prompt(
+            "Rename Group",
+            "Enter new group name",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Rename",
+                    onPress: async (name?: string) => {
+                        if (!name) return;
+                        try {
+                            await groupService.updateGroup(id, user.id, name);
+                            fetchDetails();
+                        } catch (err: any) {
+                            Alert.alert("Error", err.message);
+                        }
+                    }
+                }
+            ],
+            'plain-text',
+            data.group.name
+        );
+    };
+
     const handleDeleteGroup = async () => {
         if (!id || !user) return;
         Alert.alert(
@@ -76,6 +115,29 @@ export default function GroupDetails() {
         );
     };
 
+    const handleDeleteExpense = async (expenseId: string) => {
+        if (!user) return;
+        Alert.alert(
+            "Delete Expense",
+            "Are you sure you want to delete this expense?",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            await expenseService.deleteExpense(expenseId, user.id);
+                            fetchDetails();
+                        } catch (err: any) {
+                            Alert.alert("Error", err.message);
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
     const handleRemoveMember = async (memberId: string) => {
         if (!id || !user) return;
         try {
@@ -84,6 +146,58 @@ export default function GroupDetails() {
         } catch (err: any) {
             Alert.alert("Error", err.message);
         }
+    };
+
+    const handleAddMember = async () => {
+        if (!id || !user) return;
+
+        if (Platform.OS === 'web') {
+            const email = window.prompt("Add Member", "Enter the user's email address");
+            if (email) {
+                try {
+                    const result = await groupService.addMember(id, user.id, email);
+                    if (result === 'invited_email') {
+                        window.alert(`User not found. An email invitation has been sent to ${email}.`);
+                    } else if (result === 'invited_registered') {
+                        window.alert(`An invitation has been sent to ${email}'s notifications.`);
+                    } else {
+                        window.alert("Member added!");
+                        fetchDetails();
+                    }
+                } catch (err: any) {
+                    window.alert(`Error: ${err.message}`);
+                }
+            }
+            return;
+        }
+
+        Alert.prompt(
+            "Add Member",
+            "Enter the user's email address to add them to this group.",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Add",
+                    onPress: async (email?: string) => {
+                        if (!email) return;
+                        try {
+                            const result = await groupService.addMember(id, user.id, email);
+                            if (result === 'invited_email') {
+                                Alert.alert("Invite Sent", `User not found. An email invitation has been sent to ${email}.`);
+                            } else if (result === 'invited_registered') {
+                                Alert.alert("Invite Sent", `An invitation has been sent to their notifications.`);
+                            } else {
+                                Alert.alert("Success", "Member added!");
+                                fetchDetails();
+                            }
+                        } catch (err: any) {
+                            Alert.alert("Error", err.message);
+                        }
+                    }
+                }
+            ],
+            'plain-text'
+        );
     };
 
     if (loading || !data) {
@@ -110,12 +224,31 @@ export default function GroupDetails() {
                         </Pressable>
                     ),
                     headerRight: () => (
-                        <Pressable
-                            onPress={() => router.push({ pathname: '/add-expense', params: { groupId: id } })}
-                            className="mr-4"
-                        >
-                            <Plus size={24} color="#10b981" />
-                        </Pressable>
+                        <View className="flex-row items-center mr-4">
+                            {isCreator && (
+                                <Pressable
+                                    onPress={() => {
+                                        Alert.alert(
+                                            "Group Settings",
+                                            "Choose an action",
+                                            [
+                                                { text: "Cancel", style: "cancel" },
+                                                { text: "Rename Group", onPress: handleRenameGroup },
+                                                { text: "Delete Group", style: "destructive", onPress: handleDeleteGroup }
+                                            ]
+                                        );
+                                    }}
+                                    className="mr-5"
+                                >
+                                    <Settings size={22} color="#64748b" />
+                                </Pressable>
+                            )}
+                            <Pressable
+                                onPress={() => router.push({ pathname: '/add-expense', params: { groupId: id } })}
+                            >
+                                <Plus size={26} color="#10b981" />
+                            </Pressable>
+                        </View>
                     )
                 }}
             />
@@ -183,7 +316,7 @@ export default function GroupDetails() {
                     <View className="flex-row justify-between items-center mb-4">
                         <Text className="text-lg font-bold text-slate-900">Members ({data.members.length})</Text>
                         {isCreator && (
-                            <Pressable onPress={() => Alert.alert("Coming Soon", "Add member by email feature.")}>
+                            <Pressable onPress={handleAddMember}>
                                 <View className="flex-row items-center">
                                     <UserPlus size={18} color="#10b981" />
                                     <Text className="text-emerald-600 font-bold ml-1">Add</Text>
@@ -232,7 +365,25 @@ export default function GroupDetails() {
                                         <Text className="font-bold text-slate-900 text-base">{expense.description}</Text>
                                         <Text className="text-slate-500 text-xs">Paid by {expense.payer_id === user?.id ? 'You' : expense.payer_name}</Text>
                                     </View>
-                                    <Text className="text-lg font-black text-slate-900">$ {expense.amount.toFixed(2)}</Text>
+                                    <View className="flex-row items-center gap-4">
+                                        <Text className="text-lg font-black text-slate-900">$ {expense.amount.toFixed(2)}</Text>
+                                        {(expense.created_by === user?.id || isCreator) && (
+                                            <View className="flex-row gap-2">
+                                                <Pressable
+                                                    onPress={() => router.push({ pathname: '/edit-expense/[id]', params: { id: expense.id } })}
+                                                    className="p-1"
+                                                >
+                                                    <Edit2 size={16} color="#64748b" />
+                                                </Pressable>
+                                                <Pressable
+                                                    onPress={() => handleDeleteExpense(expense.id)}
+                                                    className="p-1"
+                                                >
+                                                    <Trash2 size={16} color="#ef4444" />
+                                                </Pressable>
+                                            </View>
+                                        )}
+                                    </View>
                                 </View>
                             ))}
                             {settlements.filter(s => s.status === 'accepted').map((s) => (
@@ -247,6 +398,27 @@ export default function GroupDetails() {
                         </View>
                     )}
                 </View>
+
+                {/* Management Section (Creator ONLY) */}
+                {isCreator && (
+                    <View className="mb-20 pb-10 border-t border-slate-100 pt-8">
+                        <Text className="text-lg font-bold text-slate-900 mb-4">Management</Text>
+                        <View className="flex-row gap-4">
+                            <Pressable
+                                onPress={handleRenameGroup}
+                                className="flex-1 bg-slate-100 py-4 rounded-2xl items-center justify-center border border-slate-200"
+                            >
+                                <Text className="font-bold text-slate-700">Rename Group</Text>
+                            </Pressable>
+                            <Pressable
+                                onPress={handleDeleteGroup}
+                                className="flex-1 bg-rose-50 py-4 rounded-2xl items-center justify-center border border-rose-100"
+                            >
+                                <Text className="font-bold text-rose-600">Delete Group</Text>
+                            </Pressable>
+                        </View>
+                    </View>
+                )}
             </ScrollView>
         </SafeAreaView>
     );

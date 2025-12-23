@@ -1,4 +1,4 @@
-
+import 'react-native-url-polyfill/auto';
 import { Stack } from "expo-router";
 import { ClerkProvider, ClerkLoaded } from "@clerk/clerk-expo";
 import * as SecureStore from "expo-secure-store";
@@ -6,8 +6,11 @@ import "../theme/global.css";
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!;
 
+import { Platform } from "react-native";
+
 const tokenCache = {
     async getToken(key: string) {
+        if (Platform.OS === 'web') return undefined;
         try {
             const item = await SecureStore.getItemAsync(key);
             if (item) {
@@ -23,6 +26,7 @@ const tokenCache = {
         }
     },
     async saveToken(key: string, value: string) {
+        if (Platform.OS === 'web') return;
         try {
             return SecureStore.setItemAsync(key, value);
         } catch (err) {

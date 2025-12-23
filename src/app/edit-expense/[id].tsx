@@ -1,24 +1,24 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, TextInput, Alert, ScrollView, ActivityIndicator, Pressable, Switch, Platform } from 'react-native';
+import { View, Text, TextInput, Alert, ScrollView, ActivityIndicator, Pressable, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Button } from '../components/Button';
-import { expenseService } from '../services/expense';
-import { groupService } from '../services/group';
-import { profileService, UserProfile } from '../services/profile';
+import { Button } from '../../components/Button';
+import { expenseService } from '../../services/expense';
+import { groupService } from '../../services/group';
+import { profileService, UserProfile } from '../../services/profile';
 import { useUser } from '@clerk/clerk-expo';
-import { router, useLocalSearchParams } from 'expo-router';
-import { DollarSign, FileText, Users, Check, X } from 'lucide-react-native';
-import { Group, Profile } from '../types/group';
-import { AdBanner } from '../components/AdBanner';
+import { router, useLocalSearchParams, Stack } from 'expo-router';
+import { DollarSign, FileText, Users, Check, X, ArrowLeft } from 'lucide-react-native';
+import { Group, Profile } from '../../types/group';
+import { AdBanner } from '../../components/AdBanner';
+import { db } from '../../utils/db';
 
-export default function AddExpense() {
+export default function EditExpense() {
     const { user } = useUser();
-    const { groupId: initialGroupId } = useLocalSearchParams<{ groupId: string }>();
+    const { id } = useLocalSearchParams<{ id: string }>();
 
     const [description, setDescription] = useState('');
     const [amount, setAmount] = useState('');
-    const [groupId, setGroupId] = useState(initialGroupId || '');
-    const [groups, setGroups] = useState<Group[]>([]);
+    const [groupId, setGroupId] = useState('');
     const [members, setMembers] = useState<Profile[]>([]);
     const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
     const [selectedMemberIds, setSelectedMemberIds] = useState<Set<string>>(new Set());
@@ -27,49 +27,66 @@ export default function AddExpense() {
     const [loading, setLoading] = useState(false);
     const [fetchingData, setFetchingData] = useState(true);
 
-    // Fetch profile, groups and then members for the selected group
     useEffect(() => {
-        const fetchInitialData = async () => {
-            if (!user) return;
+        const fetchExpenseData = async () => {
+            if (!user || !id) return;
             try {
-                const [userGroups, profile] = await Promise.all([
-                    groupService.getGroups(user.id),
+                // 1. Fetch Expense Details
+                const expenseResult = await db.execute({
+                    sql: 'SELECT * FROM expenses WHERE id = ?',
+                    args: [id]
+                });
+                const expense = expenseResult.rows[0];
+                if (!expense) {
+                    Alert.alert("Error", "Expense not found");
+                    router.back();
+                    return;
+                }
+
+                // 2. Fetch Splits
+                const splitsResult = await db.execute({
+                    sql: 'SELECT * FROM expense_splits WHERE expense_id = ?',
+                    args: [id]
+                });
+                const splits = splitsResult.rows as any[];
+
+                // 3. Set Initial State
+                setDescription(expense.description as string);
+                setAmount(expense.amount.toString());
+                setGroupId(expense.group_id as string);
+
+                // Check if it was unequal (if splits aren't roughly equal)
+                const isUnequalSplit = splits.some((s, _, arr) =>
+                    Math.abs(s.amount_owed - (expense.amount as number / arr.length)) > 0.05
+                );
+                setIsUnequal(isUnequalSplit);
+
+                const manual: { [key: string]: string } = {};
+                const selected = new Set<string>();
+                splits.forEach(s => {
+                    selected.add(s.user_id);
+                    manual[s.user_id] = s.amount_owed.toString();
+                });
+                setSelectedMemberIds(selected);
+                setManualAmounts(manual);
+
+                // 4. Fetch Group Members and Profile
+                const [details, profile] = await Promise.all([
+                    groupService.getGroupDetails(expense.group_id as string),
                     profileService.getUserProfile(user.id)
                 ]);
-                setGroups(userGroups);
+                setMembers(details.members);
                 setUserProfile(profile);
 
-                const activeGroupId = groupId || (userGroups.length > 0 ? userGroups[0].id : '');
-                if (activeGroupId) {
-                    setGroupId(activeGroupId);
-                    const details = await groupService.getGroupDetails(activeGroupId);
-                    setMembers(details.members);
-                    setSelectedMemberIds(new Set(details.members.map(m => m.id)));
-                }
             } catch (err) {
                 console.error(err);
+                Alert.alert("Error", "Could not load expense data.");
             } finally {
                 setFetchingData(false);
             }
         };
-        fetchInitialData();
-    }, [user]);
-
-    // Update members when group changes
-    useEffect(() => {
-        if (!groupId || fetchingData) return;
-        const fetchMembers = async () => {
-            try {
-                const details = await groupService.getGroupDetails(groupId);
-                setMembers(details.members);
-                setSelectedMemberIds(new Set(details.members.map(m => m.id)));
-                setManualAmounts({});
-            } catch (err) {
-                console.error(err);
-            }
-        };
-        fetchMembers();
-    }, [groupId]);
+        fetchExpenseData();
+    }, [id, user]);
 
     const toggleMember = (id: string) => {
         const next = new Set(selectedMemberIds);
@@ -111,8 +128,8 @@ export default function AddExpense() {
         return totalAmount > 0 && Math.abs(currentSplitTotal - totalAmount) < 0.01;
     }, [isUnequal, currentSplitTotal, amount]);
 
-    const handleAddExpense = async () => {
-        if (!description.trim() || !amount || !groupId) {
+    const handleUpdateExpense = async () => {
+        if (!description.trim() || !amount || !id) {
             Alert.alert("Error", "Please fill in all fields.");
             return;
         }
@@ -131,24 +148,20 @@ export default function AddExpense() {
 
         setLoading(true);
         try {
-            await expenseService.createExpense(
-                groupId,
+            await expenseService.updateExpense(
+                id,
+                user.id,
                 description,
                 parseFloat(amount),
-                user.id,
-                user.id,
+                user.id, // Updating payer as current user is usually the intent if they edit, but actually we should keep original payer?
+                // For now keeping it simple: current user (who might be creator) edits it.
                 splits
             );
-            if (Platform.OS === 'web') {
-                window.alert("Expense added!");
-                router.replace({ pathname: '/group/[id]', params: { id: groupId } });
-            } else {
-                Alert.alert("Success", "Expense added!", [
-                    { text: "OK", onPress: () => router.replace({ pathname: '/group/[id]', params: { id: groupId } }) }
-                ]);
-            }
+            Alert.alert("Success", "Expense updated!", [
+                { text: "OK", onPress: () => router.back() }
+            ]);
         } catch (err: any) {
-            Alert.alert("Error", err.message || "Could not add expense.");
+            Alert.alert("Error", err.message || "Could not update expense.");
         } finally {
             setLoading(false);
         }
@@ -164,10 +177,18 @@ export default function AddExpense() {
 
     return (
         <SafeAreaView className="flex-1 bg-white">
+            <Stack.Screen options={{
+                title: "Edit Expense",
+                headerLeft: () => (
+                    <Pressable onPress={() => router.back()} className="ml-4">
+                        <ArrowLeft size={24} color="#0f172a" />
+                    </Pressable>
+                )
+            }} />
             <ScrollView className="flex-1 px-6 pt-6">
                 <View className="mb-6">
-                    <Text className="text-3xl font-bold text-slate-900 mb-2">Add Expense</Text>
-                    <Text className="text-slate-500 text-base">Record what was spent and split it.</Text>
+                    <Text className="text-3xl font-bold text-slate-900 mb-2">Edit Expense</Text>
+                    <Text className="text-slate-500 text-base">Identify changes and update splits.</Text>
                 </View>
 
                 <View className="gap-6 pb-10">
@@ -211,7 +232,7 @@ export default function AddExpense() {
                     </View>
 
                     <View>
-                        <Text className="mb-4 font-bold text-slate-900">Choose Participants</Text>
+                        <Text className="mb-4 font-bold text-slate-900">Participants</Text>
                         {members.map(member => (
                             <View key={member.id} className="flex-row items-center justify-between mb-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
                                 <Pressable
@@ -260,8 +281,8 @@ export default function AddExpense() {
 
                     <View className="mt-4">
                         <Button
-                            label={loading ? "Adding..." : "Add Expense"}
-                            onPress={handleAddExpense}
+                            label={loading ? "Updating..." : "Update Expense"}
+                            onPress={handleUpdateExpense}
                             disabled={loading || !isTotalValid}
                         />
                         <Button

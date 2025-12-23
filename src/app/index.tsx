@@ -10,7 +10,8 @@ import { groupService } from '../services/group';
 import { expenseService } from '../services/expense';
 import { Group } from '../types/group';
 import { db } from '../utils/db';
-import { User, Plus } from 'lucide-react-native';
+import { User, Plus, Bell } from 'lucide-react-native';
+import { notificationService } from '../services/notification';
 
 export default function Home() {
     const { isLoaded, isSignedIn, user } = useUser();
@@ -19,6 +20,7 @@ export default function Home() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [netBalance, setNetBalance] = useState({ totalOwed: 0, totalOwes: 0 });
+    const [unreadCount, setUnreadCount] = useState(0);
 
     const syncProfileAndFetchGroups = async () => {
         if (!user) return;
@@ -43,13 +45,15 @@ export default function Home() {
                 ],
             });
 
-            // 2. Fetch groups and balances
-            const [userGroups, balances] = await Promise.all([
+            // 2. Fetch groups, balances, and notifications
+            const [userGroups, balances, notifications] = await Promise.all([
                 groupService.getGroups(user.id),
-                expenseService.getUserBalance(user.id)
+                expenseService.getUserBalance(user.id),
+                notificationService.getNotifications(user.id)
             ]);
             setGroups(userGroups);
             setNetBalance({ totalOwed: balances.owed, totalOwes: balances.owes });
+            setUnreadCount(notifications.filter(n => !n.is_read).length);
         } catch (err) {
             console.error("Dashboard error:", err);
         } finally {
@@ -88,9 +92,22 @@ export default function Home() {
                     headerShown: true,
                     title: 'Xpense Share',
                     headerRight: () => (
-                        <Pressable onPress={() => router.push('/profile')} className="mr-4 p-2 bg-slate-100 rounded-full">
-                            <User size={20} style={{ color: '#0f172a' }} />
-                        </Pressable>
+                        <View className="flex-row items-center mr-4">
+                            <Pressable
+                                onPress={() => router.push('/notifications')}
+                                className="mr-3 p-2 bg-slate-100 rounded-full relative"
+                            >
+                                <Bell size={20} color="#0f172a" />
+                                {unreadCount > 0 && (
+                                    <View className="absolute top-0 right-0 h-4 w-4 bg-rose-500 rounded-full items-center justify-center border-2 border-white">
+                                        <Text className="text-[8px] text-white font-bold">{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                                    </View>
+                                )}
+                            </Pressable>
+                            <Pressable onPress={() => router.push('/profile')} className="p-2 bg-slate-100 rounded-full">
+                                <User size={20} color="#0f172a" />
+                            </Pressable>
+                        </View>
                     )
                 }}
             />
@@ -122,14 +139,14 @@ export default function Home() {
                         label="New Group"
                         onPress={() => router.push('/create-group')}
                         className="flex-1"
-                        icon={<Plus size={20} style={{ color: 'white' }} />}
+                        icon={<Plus size={20} color="white" />}
                     />
                     <Button
                         label="Profile"
                         onPress={() => router.push('/profile')}
                         variant="secondary"
                         className="flex-1"
-                        icon={<User size={20} style={{ color: '#10b981' }} />}
+                        icon={<User size={20} color="#10b981" />}
                     />
                 </View>
 

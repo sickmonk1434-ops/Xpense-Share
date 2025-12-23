@@ -1,5 +1,7 @@
 import { db } from '../utils/db';
 import { Group, Profile, GroupMember } from '../types/group';
+import { emailService } from './email';
+import { notificationService } from './notification';
 
 export const groupService = {
     /**
@@ -77,41 +79,93 @@ export const groupService = {
     },
 
     /**
-     * Add a member to a group (with member limit check)
+     * Rename a group (Creator only)
      */
-    async addMember(groupId: string, creatorId: string, newUserEmail: string): Promise<void> {
-        // 1. Check if the requester is the creator
+    async updateGroup(groupId: string, userId: string, name: string): Promise<void> {
         const groupResult = await db.execute({
             sql: 'SELECT created_by FROM groups WHERE id = ?',
             args: [groupId],
         });
-        if (groupResult.rows[0]?.created_by !== creatorId) {
+
+        const group = groupResult.rows[0];
+        if (!group || group.created_by !== userId) {
+            throw new Error("Only the group creator can rename the group.");
+        }
+
+        await db.execute({
+            sql: 'UPDATE groups SET name = ? WHERE id = ?',
+            args: [name, groupId],
+        });
+    },
+
+    /**
+     * Add a member to a group (with member limit check)
+     */
+    async addMember(groupId: string, creatorId: string, newUserEmail: string): Promise<'added' | 'invited_registered' | 'invited_email'> {
+        // 1. Check if the requester is the creator
+        const groupResult = await db.execute({
+            sql: 'SELECT name, created_by FROM groups WHERE id = ?',
+            args: [groupId],
+        });
+        const group = groupResult.rows[0];
+        if (!group || group.created_by !== (creatorId as any)) {
             throw new Error("Only the group creator can add members.");
         }
 
-        // 2. Get new user profile
+        // 2. Get inviter profile for the email/notification
+        const inviterResult = await db.execute({
+            sql: 'SELECT full_name FROM profiles WHERE id = ?',
+            args: [creatorId],
+        });
+        const inviterName = (inviterResult.rows[0]?.full_name as string) || "The Group Creator";
+
+        // 3. Get new user profile
         const userResult = await db.execute({
             sql: 'SELECT id FROM profiles WHERE email = ?',
             args: [newUserEmail],
         });
         const newUser = userResult.rows[0];
-        if (!newUser) throw new Error("User with this email not found.");
 
-        // 3. Check member limits for this creator
-        const profileResult = await db.execute({
-            sql: 'SELECT max_members_per_group, (SELECT COUNT(*) FROM group_members WHERE group_id = ?) as current_members FROM profiles WHERE id = ?',
-            args: [groupId, creatorId],
-        });
-        const profile = profileResult.rows[0];
-        if (profile && (profile.current_members as number) >= (profile.max_members_per_group as number)) {
-            throw new Error(`Member limit reached. Max members per group is ${profile.max_members_per_group}.`);
+        // 4. If user found, check if already a member or already invited
+        if (newUser) {
+            const memberCheck = await db.execute({
+                sql: 'SELECT id FROM group_members WHERE group_id = ? AND user_id = ?',
+                args: [groupId, newUser.id as string],
+            });
+            if (memberCheck.rows.length > 0) {
+                throw new Error("This user is already a member of the group.");
+            }
+
+            const inviteCheck = await db.execute({
+                sql: "SELECT id FROM invitations WHERE group_id = ? AND invitee_id = ? AND status = 'pending'",
+                args: [groupId, newUser.id as string],
+            });
+            if (inviteCheck.rows.length > 0) {
+                throw new Error("An invitation has already been sent to this user.");
+            }
         }
 
-        // 4. Add member
+        // 5. If user not found, send email invite
+        if (!newUser) {
+            await emailService.sendInvite(newUserEmail, group.name as string, inviterName);
+            return 'invited_email';
+        }
+
+        // 6. Registered user: Create invitation and notification instead of direct add
+        const invitationId = Math.random().toString(36).substring(2, 15);
         await db.execute({
-            sql: 'INSERT INTO group_members (group_id, user_id) VALUES (?, ?)',
-            args: [groupId, newUser.id as string],
+            sql: 'INSERT INTO invitations (id, group_id, inviter_id, invitee_id) VALUES (?, ?, ?, ?)',
+            args: [invitationId, groupId, creatorId, newUser.id as string],
         });
+
+        await notificationService.createNotification(
+            newUser.id as string,
+            'invite',
+            invitationId,
+            `${inviterName} invited you to join "${group.name}".`
+        );
+
+        return 'invited_registered';
     },
 
     /**
