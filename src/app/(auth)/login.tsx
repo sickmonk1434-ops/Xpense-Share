@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react'
-import { View, TextInput, Text, Pressable, Platform } from 'react-native'
+import { View, TextInput, Text, Pressable, Platform, Image as RNImage } from 'react-native'
 import * as Linking from 'expo-linking'
 import { useSignIn, useOAuth } from '@clerk/clerk-expo'
 import { Button } from '../../components/Button'
@@ -58,7 +58,7 @@ export default function Login() {
     return (
         <SafeAreaView className="flex-1 bg-white justify-center px-6">
             <View className="mb-10 items-center">
-                <Image
+                <RNImage
                     source={require('../../../assets/logo.jpg')}
                     className="w-24 h-24 mb-6"
                     resizeMode="contain"

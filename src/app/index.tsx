@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { Text, View, ScrollView, ActivityIndicator, Pressable, RefreshControl } from 'react-native';
+import { Text, View, ScrollView, ActivityIndicator, Pressable, RefreshControl, Image as RNImage } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '../components/Button';
 import { GroupCard } from '../components/GroupCard';
@@ -92,7 +92,7 @@ export default function Home() {
                     headerShown: true,
                     headerTitle: () => (
                         <View className="flex-row items-center gap-2">
-                            <Image
+                            <RNImage
                                 source={require('../../assets/logo.jpg')}
                                 style={{ width: 30, height: 30 }}
                                 resizeMode="contain"
