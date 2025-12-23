@@ -57,7 +57,12 @@ export default function Login() {
 
     return (
         <SafeAreaView className="flex-1 bg-white justify-center px-6">
-            <View className="mb-10">
+            <View className="mb-10 items-center">
+                <Image
+                    source={require('../../../assets/logo.jpg')}
+                    className="w-24 h-24 mb-6"
+                    resizeMode="contain"
+                />
                 <Text className="text-3xl font-bold text-slate-900 mb-2">Welcome Back</Text>
                 <Text className="text-slate-500 text-base">Sign in to continue splitting expenses.</Text>
             </View>

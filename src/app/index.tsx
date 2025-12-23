@@ -90,7 +90,17 @@ export default function Home() {
             <Stack.Screen
                 options={{
                     headerShown: true,
-                    title: 'Xpense Share',
+                    headerTitle: () => (
+                        <View className="flex-row items-center gap-2">
+                            <Image
+                                source={require('../../assets/logo.jpg')}
+                                style={{ width: 30, height: 30 }}
+                                resizeMode="contain"
+                            />
+                            <Text className="text-lg font-bold text-slate-900">Xpense Share</Text>
+                        </View>
+                    ),
+                    headerTitleAlign: 'left',
                     headerRight: () => (
                         <View className="flex-row items-center mr-4">
                             <Pressable
