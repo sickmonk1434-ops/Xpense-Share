@@ -1,17 +1,19 @@
-import { ExpoRequest } from 'expo-router/server';
+export default async function handler(request, response) {
+    if (request.method !== 'POST') {
+        return response.status(405).json({ error: 'Method Not Allowed' });
+    }
 
-export async function POST(request: ExpoRequest) {
     try {
-        const { toEmail, groupName, inviterName } = await request.json();
+        const { toEmail, groupName, inviterName } = request.body;
 
         const API_KEY = process.env.EXPO_PUBLIC_MAILEROO_API_KEY;
         const FROM_EMAIL = process.env.EXPO_PUBLIC_MAILEROO_FROM_EMAIL;
 
         if (!API_KEY || !FROM_EMAIL) {
-            return Response.json({ error: "Server misconfiguration: Missing email keys" }, { status: 500 });
+            return response.status(500).json({ error: "Server misconfiguration: Missing email keys" });
         }
 
-        const response = await fetch('https://smtp.maileroo.com/api/v2/emails', {
+        const fetchResponse = await fetch('https://smtp.maileroo.com/api/v2/emails', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -33,14 +35,14 @@ export async function POST(request: ExpoRequest) {
             }),
         });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            return Response.json({ error: `Maileroo error: ${errorText}` }, { status: response.status });
+        if (!fetchResponse.ok) {
+            const errorText = await fetchResponse.text();
+            return response.status(fetchResponse.status).json({ error: `Maileroo error: ${errorText}` });
         }
 
-        return Response.json({ success: true });
+        return response.status(200).json({ success: true });
 
-    } catch (error: any) {
-        return Response.json({ error: error.message }, { status: 500 });
+    } catch (error) {
+        return response.status(500).json({ error: error.message });
     }
 }
