@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+
 export const emailService = {
     /**
      * Send an invite email to a user who is not yet registered
