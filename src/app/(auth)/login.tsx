@@ -43,7 +43,7 @@ export default function Login() {
     const signInWithGoogle = useCallback(async () => {
         try {
             const { createdSessionId, signIn, signUp, setActive } = await startOAuthFlow({
-                redirectUrl: Linking.createURL('/oauth-native-callback', { scheme: 'xpense-share' })
+                redirectUrl: Linking.createURL(Platform.OS === 'web' ? '/' : '/oauth-native-callback', { scheme: 'xpense-share' })
             });
             if (createdSessionId) {
                 setActive!({ session: createdSessionId });
