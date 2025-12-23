@@ -25,7 +25,8 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/logo.jpg"
+      "favicon": "./assets/logo.jpg",
+      "output": "single"
     }
   }
 }
