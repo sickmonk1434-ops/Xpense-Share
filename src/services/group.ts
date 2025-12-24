@@ -17,7 +17,6 @@ export const groupService = {
         ORDER BY g.created_at DESC
       `,
             args: [userId, userId],
-            args: [userId],
         });
 
         return result.rows as unknown as Group[];
