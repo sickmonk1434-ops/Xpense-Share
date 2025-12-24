@@ -10,12 +10,13 @@ export const groupService = {
     async getGroups(userId: string): Promise<Group[]> {
         const result = await db.execute({
             sql: `
-        SELECT g.*, (SELECT COUNT(*) FROM group_members WHERE group_id = g.id) as member_count
+        SELECT DISTINCT g.*, (SELECT COUNT(*) FROM group_members WHERE group_id = g.id) as member_count
         FROM groups g
-        JOIN group_members gm ON gm.group_id = g.id
-        WHERE gm.user_id = ?
+        LEFT JOIN group_members gm ON gm.group_id = g.id
+        WHERE gm.user_id = ? OR g.created_by = ?
         ORDER BY g.created_at DESC
       `,
+            args: [userId, userId],
             args: [userId],
         });
 

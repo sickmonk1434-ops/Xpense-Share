@@ -20,8 +20,8 @@ export default async function handler(request, response) {
                 'X-API-Key': API_KEY,
             },
             body: JSON.stringify({
-                from: FROM_EMAIL,
-                to: toEmail,
+                from: { address: FROM_EMAIL, display_name: "Xpense Share" },
+                to: [{ address: toEmail }],
                 subject: `Join "${groupName}" on Xpense Share!`,
                 html: `
             <div style="font-family: sans-serif; color: #333;">
